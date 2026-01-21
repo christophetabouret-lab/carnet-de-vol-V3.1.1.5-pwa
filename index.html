@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Carnet de Vol - V49.9.45</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        :root { --primary: #1a73e8; --success: #34a853; --danger: #ea4335; --dark: #202124; --grey: #5f6368; --orange: #ff9800; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; padding: 10px; margin: 0; overflow-x: hidden; }
+        .container { max-width: 650px; margin: auto; background: white; padding: 12px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box; }
+        
+        #customModal { 
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.7); 
+            display: none; 
+            align-items: center; 
+            justify-content: center; 
+            z-index: 10000; 
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .modal-content { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 25px; 
+            width: 100%; 
+            max-width: 350px; 
+            text-align: center; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            margin: auto;
+        }
+
+        .header-logo { text-align: center; margin-bottom: 5px; }
+        .drone-icon { width: 50px; height: 50px; fill: var(--primary); }
+        .app-title { text-align: center; font-size: 1.2rem; font-weight: 800; color: var(--dark); margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .live-clock { text-align: center; font-family: monospace; font-size: 1.5rem; font-weight: bold; color: #333; background: #e8f0fe; padding: 8px; border-radius: 12px; margin-bottom: 15px; border: 2px solid var(--primary); }
+        
+        #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 12px 25px; border-radius: 30px; color: white; font-weight: bold; z-index: 9999; opacity: 0; transition: 0.4s; pointer-events: none; font-size: 0.9rem; box-shadow: 0 4px 15px rgba(0,0,0,0.2); text-align: center; }
+        #toast.show { opacity: 1; top: 40px; }
+
+        .modal-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .btn-modal { border: none; padding: 15px; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+
+        .drone-selector-bar { display: flex; gap: 8px; overflow-x: auto; padding: 5px 0 15px 0; margin-bottom: 15px; scrollbar-width: none; border-bottom: 1px solid #eee; -webkit-overflow-scrolling: touch; }
+        .drone-pill-container { position: relative; display: flex; align-items: center; flex-shrink: 0; }
+        .drone-pill { background: #eee; padding: 10px 25px 10px 18px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        .drone-pill.active { background: var(--primary); color: white; }
+        .del-drone { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); color: #888; font-size: 14px; padding: 2px 5px; cursor: pointer; border-radius: 50%; }
+        .drone-pill.active + .del-drone { color: white; }
+
+        .battery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; margin-bottom: 20px; background: #f8f9fa; padding: 10px; border-radius: 12px; border: 1px solid #ddd; }
+        .bat-box { background: white; padding: 10px 5px; text-align: center; border-radius: 10px; border: 1.5px solid #ddd; }
+        .bat-box b { display: block; font-size: 0.9rem; color: var(--primary); margin-bottom: 4px; }
+        .bat-box .last-time-badge { display: block; margin-top: 6px; background: #ffebee; color: #d32f2f; font-weight: 900; font-size: 0.85rem; padding: 4px 0; border-radius: 6px; border: 1px solid #ffcdd2; }
+
+        form { display: flex; flex-direction: column; gap: 12px; background: #f9f9f9; padding: 12px; border-radius: 15px; border: 1px solid #eee; }
+        .row-split { display: flex; gap: 10px; flex-wrap: wrap; }
+        .field { flex: 1; min-width: 140px; display: flex; flex-direction: column; }
+        label { font-size: 0.65rem; font-weight: bold; color: var(--grey); margin-bottom: 4px; text-transform: uppercase; }
+        input, select { height: 45px; border-radius: 8px; border: 1px solid #ddd; padding: 0 8px; font-size: 0.9rem; background: white; width: 100%; box-sizing: border-box; }
+
+        .time-adjustment { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px; }
+        .time-select-group { display: flex; align-items: center; gap: 5px; }
+        .time-select-group select { flex: 1; text-align: center; font-weight: bold; }
+
+        .main-btn { color: white; border: none; height: 55px; border-radius: 12px; font-weight: bold; font-size: 0.85rem; cursor: pointer; width: 100%; text-transform: uppercase; }
+        #map { height: 120px; border-radius: 10px; margin-top: 8px; border: 1px solid #ddd; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 0.65rem; margin-top: 10px; table-layout: fixed; }
+        th { text-align: left; padding: 8px; background: #f4f4f4; border-bottom: 2px solid #ddd; }
+        td { padding: 8px; border-bottom: 1px solid #eee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.55rem; font-weight: bold; color: white; text-transform: uppercase; display: inline-block; }
+        .bg-mission { background: var(--primary); }
+        .bg-entrainement { background: var(--success); }
+        .bg-autre { background: var(--grey); }
+
+        .footer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+        .btn-pdf-highlight { background: var(--orange) !important; color: white !important; height: 60px !important; font-size: 1rem !important; grid-column: span 2; border-radius: 12px; border:none; font-weight: bold; box-shadow: 0 4px 10px rgba(255,152,0,0.3); }
+    </style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div id="customModal">
+    <div class="modal-content">
+        <h3 style="color:var(--danger); margin-top:0;">🗑️ NETTOYAGE</h3>
+        <p id="modalMsg" style="font-size: 0.95rem; color: var(--grey); line-height: 1.4;"></p>
+        <div class="modal-btns">
+            <button class="btn-modal" style="background:#eee;" onclick="closeModal()">ANNULER</button>
+            <button class="btn-modal" style="background:var(--danger); color:white;" onclick="confirmClear()">EFFACER</button>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="header-logo">
+        <svg class="drone-icon" viewBox="0 0 24 24">
+            <path d="M21,16.5C21,16.88 20.79,17.21 20.47,17.38L12.57,21.82C12.41,21.94 12.21,22 12,22C11.79,22 11.59,21.94 11.43,21.82L3.53,17.38C3.21,17.21 3,16.88 3,16.5V7.5C3,7.12 3.21,6.79 3.53,6.62L11.43,2.18C11.59,2.06 11.79,2 12,2C12.21,2 12.41,2.06 12.57,2.18L20.47,6.62C20.79,6.79 21,7.12 21,7.5V16.5M12,4.15L5.32,7.91L12,11.66L18.68,7.91L12,4.15M5,15.91L11,19.29V12.69L5,9.31V15.91M19,15.91V9.31L13,12.69V19.29L19,15.91Z" />
+        </svg>
+    </div>
+    <h1 class="app-title">Carnet de Vol Numérique</h1>
+    
+    <div class="live-clock" id="liveClock">00:00:00</div>
+
+    <div class="drone-selector-bar" id="droneFilter"></div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div style="font-size: 0.75rem; font-weight: 800; color: var(--grey); border-left: 3px solid var(--primary); padding-left: 8px;">DÉCOMPTE BATTERIES</div>
+        <button onclick="openModal()" style="background:none; border:none; font-size:1.3rem; color:var(--danger); cursor:pointer;">🗑️</button>
+    </div>
+    <div id="batteryStats" class="battery-grid"></div>
+
+    <form id="flightForm">
+        <div class="row-split">
+            <div class="field">
+                <label>Appareil</label>
+                <select id="droneSelect" required onchange="handleDroneChange(this.value)">
+                    <option value="MAVIC 3">MAVIC 3</option>
+                    <option value="MAVIC 4T">MAVIC 4T</option>
+                    <option value="MAVIC 4TD">MAVIC 4TD</option>
+                    <option value="AVATA">AVATA</option>
+                    <option value="M30">DJI M30</option>
+                    <option value="AUTEL 4T">AUTEL 4T</option>
+                    <option value="MAVIC 2">MAVIC 2</option>
+                    <option value="AUTRE">➕ AJOUTER AUTRE</option>
+                </select>
+                <input type="text" id="otherDroneInput" style="display:none; margin-top:5px;" placeholder="NOM DU DRONE..." oninput="syncOtherDrone(this.value)">
+            </div>
+            <div class="field"><label>Batterie</label><select id="batterySelect" required></select></div>
+        </div>
+
+        <div class="row-split">
+            <div class="field"><label>Date</label><input type="date" id="date" required></div>
+            <div class="field">
+                <label>Type de Vol</label>
+                <select id="flightType" required>
+                    <option value="MISSION">MISSION</option>
+                    <option value="ENTRAÎNEMENT">ENTRAÎNEMENT</option>
+                    <option value="AUTRE">AUTRE</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Lieu</label>
+            <div style="display:flex; gap:5px;"><input type="text" id="gps" style="flex:1;" placeholder="Recherche adresse..."><button type="button" onclick="getLocation()" id="btnGps" style="width:45px; background:var(--primary); color:white; border:none; border-radius:8px;">📍</button></div>
+            <div id="map"></div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <button type="button" class="main-btn" style="background:var(--success)" onclick="capture('start')">DÉCOLLAGE</button>
+            <button type="button" class="main-btn" style="background:var(--danger)" onclick="capture('end')">ATTERRISSAGE</button>
+        </div>
+
+        <div class="time-adjustment">
+            <div class="field">
+                <label>Heure Décollage</label>
+                <div class="time-select-group">
+                    <select id="h-start" required></select>
+                    <select id="m-start" required></select>
+                </div>
+            </div>
+            <div class="field">
+                <label>Heure Atterrissage</label>
+                <div class="time-select-group">
+                    <select id="h-end" required></select>
+                    <select id="m-end" required></select>
+                </div>
+            </div>
+        </div>
+        
+        <button type="submit" class="main-btn" style="background:var(--primary)">💾 ENREGISTRER LE VOL</button>
+    </form>
+
+    <div style="font-size: 0.75rem; font-weight: 800; color: var(--grey); margin: 20px 0 5px 0; border-left: 3px solid var(--grey); padding-left: 8px;">HISTORIQUE RÉCENT (3 DERNIERS)</div>
+    <table id="logTable">
+        <thead>
+            <tr>
+                <th style="width: 25%;">Drone</th>
+                <th style="width: 25%;">Type</th>
+                <th style="width: 15%;">Heure</th>
+                <th style="width: 35%;">Lieu</th>
+            </tr>
+        </thead>
+        <tbody id="logBody"></tbody>
+    </table>
+
+    <div class="footer-actions">
+        <button class="btn-pdf-highlight" onclick="generateFullPDF()">📄 PDF + STATS DÉTAILLÉES</button>
+        <button onclick="exportJSON()" style="height:45px; border-radius:8px; border:1px solid #ccc; background:white; font-weight:bold; font-size:0.7rem;">📤 SAUVEGARDE</button>
+        <button onclick="document.getElementById('importFile').click()" style="height:45px; border-radius:8px; border:1px solid #ccc; background:white; font-weight:bold; font-size:0.7rem;">📥 RESTAURATION</button>
+        <input type="file" id="importFile" style="display:none" accept=".json" onchange="importJSON(event)">
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'LOGBOOK_V49_FINAL';
+    const HIDDEN_KEY = 'LOGBOOK_HIDDEN_DEVICES';
+    const MASQUER_DRONE_KEY = 'LOGBOOK_MASQUER_DRONES';
+    
+    let flights = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    let hiddenDevices = JSON.parse(localStorage.getItem(HIDDEN_KEY)) || [];
+    let masquerDrones = JSON.parse(localStorage.getItem(MASQUER_DRONE_KEY)) || [];
+    
+    let currentFilter = 'MAVIC 3';
+    let map;
+
+    function showNotify(msg, color="var(--primary)") {
+        const t = document.getElementById('toast');
+        t.innerText = msg; t.className = 'show';
+        t.style.background = color;
+        setTimeout(() => { t.className = ''; }, 3000);
+    }
+
+    function openModal() {
+        document.getElementById('modalMsg').innerText = `Masquer les statistiques batteries pour l'appareil ${currentFilter} ?`;
+        document.getElementById('customModal').style.display = 'flex';
+    }
+    function closeModal() { document.getElementById('customModal').style.display = 'none'; }
+    
+    function confirmClear() {
+        if (!hiddenDevices.includes(currentFilter)) {
+            hiddenDevices.push(currentFilter);
+            localStorage.setItem(HIDDEN_KEY, JSON.stringify(hiddenDevices));
+            updateUI();
+            showNotify(`🗑️ STATS ${currentFilter} MASQUÉES`);
+        }
+        closeModal();
+    }
+
+    function masquerDrone(d) {
+        if (!masquerDrones.includes(d)) {
+            masquerDrones.push(d);
+            localStorage.setItem(MASQUER_DRONE_KEY, JSON.stringify(masquerDrones));
+            currentFilter = "MAVIC 3";
+            updateUI();
+            showNotify(`🚫 DRONE ${d} MASQUÉ`);
+        }
+    }
+
+    function handleDroneChange(val) {
+        const otherInput = document.getElementById('otherDroneInput');
+        if (val === 'AUTRE') { otherInput.style.display = 'block'; otherInput.focus(); } 
+        else { otherInput.style.display = 'none'; setFilter(val); }
+    }
+
+    function syncOtherDrone(val) { if(val.trim().length > 0) { currentFilter = val.toUpperCase(); updateUI(); } }
+
+    function initMap() {
+        map = L.map('map', {zoomControl: false}).setView([46.6, 1.8], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    }
+
+    async function getLocation() {
+        const btn = document.getElementById('btnGps');
+        const inputGps = document.getElementById('gps');
+        if (navigator.geolocation) {
+            btn.innerText = "⏳";
+            navigator.geolocation.getCurrentPosition(async p => {
+                const lat = p.coords.latitude, lng = p.coords.longitude;
+                map.setView([lat, lng], 15); L.marker([lat, lng]).addTo(map);
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                    const data = await response.json();
+                    if(data.address) {
+                        const street = data.address.road || data.address.pedestrian || "";
+                        const city = data.address.city || data.address.town || data.address.village || "";
+                        inputGps.value = `${street}${street && city ? ', ' : ''}${city}` || `${lat.toFixed(4)},${lng.toFixed(4)}`;
+                    } else { inputGps.value = `${lat.toFixed(4)},${lng.toFixed(4)}`; }
+                } catch (e) { inputGps.value = `${lat.toFixed(4)},${lng.toFixed(4)}`; }
+                btn.innerText = "📍";
+                showNotify("📍 POSITION ACTUALISÉE");
+            }, () => { btn.innerText = "📍"; showNotify("❌ GPS DÉSACTIVÉ", "var(--danger)"); });
+        }
+    }
+
+    function capture(type) {
+        const now = new Date();
+        document.getElementById(`h-${type}`).value = String(now.getHours()).padStart(2, '0');
+        document.getElementById(`m-${type}`).value = String(now.getMinutes()).padStart(2, '0');
+        showNotify(type === 'start' ? "🚀 DÉCOLLAGE FIXÉ" : "🛬 ATTERRISSAGE FIXÉ");
+    }
+
+    function updateUI() {
+        const logBody = document.getElementById('logBody');
+        const batStats = document.getElementById('batteryStats');
+        const droneFilter = document.getElementById('droneFilter');
+        logBody.innerHTML = ''; batStats.innerHTML = '';
+        
+        let dronesList = ["MAVIC 3", "MAVIC 4T", "MAVIC 4TD", "AVATA", "M30", "AUTEL 4T", "MAVIC 2"];
+        flights.forEach(f => { if(!dronesList.includes(f.drone)) dronesList.push(f.drone); });
+        if(!dronesList.includes(currentFilter)) dronesList.push(currentFilter);
+
+        dronesList = dronesList.filter(d => !masquerDrones.includes(d));
+
+        let batUsage = {};
+        flights.forEach(f => {
+            if (!hiddenDevices.includes(f.drone)) {
+                let key = `${f.drone}|${f.battery}`;
+                if(!batUsage[key]) batUsage[key] = { count: 0, last: "", drone: f.drone, bat: f.battery };
+                batUsage[key].count++;
+                batUsage[key].last = `${String(f.hEnd).padStart(2,'0')}:${String(f.mEnd).padStart(2,'0')}`;
+            }
+        });
+
+        Object.values(batUsage).forEach(i => {
+            if (i.drone === currentFilter) {
+                batStats.innerHTML += `<div class="bat-box"><b>${i.bat}</b><div style="font-size:0.7rem;">${i.count} vols</div><div class="last-time-badge">${i.last}</div></div>`;
+            }
+        });
+
+        [...flights].reverse().slice(0, 3).forEach(f => {
+            let typeClass = f.type === 'MISSION' ? 'bg-mission' : (f.type === 'ENTRAÎNEMENT' ? 'bg-entrainement' : 'bg-autre');
+            logBody.innerHTML += `<tr>
+                <td><b>${f.drone}</b></td>
+                <td><span class="badge ${typeClass}">${f.type}</span></td>
+                <td>${String(f.hStart).padStart(2,'0')}:${String(f.mStart).padStart(2,'0')}</td>
+                <td>${f.gps || '-'}</td>
+            </tr>`;
+        });
+
+        droneFilter.innerHTML = '';
+        dronesList.forEach(d => {
+            droneFilter.innerHTML += `
+            <div class="drone-pill-container">
+                <div class="drone-pill ${currentFilter===d?'active':''}" onclick="setFilter('${d}')">${d}</div>
+                <span class="del-drone" onclick="masquerDrone('${d}')">×</span>
+            </div>`;
+        });
+    }
+
+    function setFilter(d) { currentFilter = d; if(document.getElementById('droneSelect').value !== 'AUTRE') document.getElementById('droneSelect').value = d; updateUI(); }
+
+    function formatTime(totalMinutes) {
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}min`;
+    }
+
+    function generateFullPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const now = new Date();
+        const months = ["JANVIER", "FÉVRIER", "MARS", "AVRIL", "MAI", "JUIN", "JUILLET", "AOÛT", "SEPTEMBRE", "OCTOBRE", "NOVEMBRE", "DÉCEMBRE"];
+
+        let stats = { m: {}, q: {}, y: { c: 0, t: 0 } };
+
+        flights.forEach(f => {
+            const d = new Date(f.date);
+            const y = d.getFullYear();
+            if (y === now.getFullYear()) {
+                const m = d.getMonth(), q = Math.floor(m / 3) + 1;
+                const mK = `${months[m]} ${y}`, qK = `TRIMESTRE ${q} ${y}`;
+                const dur = (parseInt(f.hEnd)*60+parseInt(f.mEnd)) - (parseInt(f.hStart)*60+parseInt(f.mStart));
+                const finalDur = dur < 0 ? dur + 1440 : dur;
+                if(!stats.m[mK]) stats.m[mK] = { c: 0, t: 0 };
+                if(!stats.q[qK]) stats.q[qK] = { c: 0, t: 0 };
+                stats.m[mK].c++; stats.m[mK].t += finalDur;
+                stats.q[qK].c++; stats.q[qK].t += finalDur;
+                stats.y.c++; stats.y.t += finalDur;
+            }
+        });
+
+        doc.setFontSize(18); doc.setTextColor(26, 115, 232); doc.text("CARNET DE VOL NUMÉRIQUE - BILAN", 14, 20);
+        doc.setFontSize(10); doc.setTextColor(100); doc.text(`Rapport généré le : ${now.toLocaleString('fr-FR')}`, 14, 28);
+
+        let body = [];
+        body.push([{ content: 'DÉTAIL PAR MOIS', colSpan: 3, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', halign: 'left' } }]);
+        Object.keys(stats.m).forEach(k => body.push([k, stats.m[k].c, formatTime(stats.m[k].t)]));
+        
+        body.push([{ content: 'DÉTAIL PAR TRIMESTRE', colSpan: 3, styles: { fillColor: [230, 230, 230], fontStyle: 'bold', halign: 'left' } }]);
+        Object.keys(stats.q).forEach(k => body.push([k, stats.q[k].c, formatTime(stats.q[k].t)]));
+        
+        body.push([{ content: 'RÉCAPITULATIF ANNUEL', colSpan: 3, styles: { fillColor: [32, 33, 36], textColor: 255, fontStyle: 'bold', halign: 'left' } }]);
+        body.push([`TOTAL ANNÉE ${now.getFullYear()}`, stats.y.c, formatTime(stats.y.t)]);
+
+        doc.autoTable({
+            startY: 40, head: [['PÉRIODE', 'NB VOLS', 'DURÉE TOTALE']], body: body, theme: 'grid',
+            headStyles: { fillColor: [26, 115, 232] }, styles: { halign: 'center', fontSize: 9 }
+        });
+
+        const rows = [...flights].reverse().map(f => {
+            const dur = (parseInt(f.hEnd)*60+parseInt(f.mEnd)) - (parseInt(f.hStart)*60+parseInt(f.mStart));
+            return [f.drone, f.type, f.date, f.battery, `${String(f.hStart).padStart(2,'0')}:${String(f.mStart).padStart(2,'0')}`, `${dur < 0 ? dur + 1440 : dur} min`, f.gps || '-'];
+        });
+
+        doc.autoTable({ startY: doc.lastAutoTable.finalY + 15, head: [['Drone', 'Type', 'Date', 'Bat', 'Heure', 'Durée', 'Lieu']], body: rows, styles: { fontSize: 7.5 }, headStyles: { fillColor: [26, 115, 232] } });
+        doc.save(`Rapport_Vols_${now.toISOString().split('T')[0]}.pdf`);
+    }
+
+    document.getElementById('flightForm').onsubmit = (e) => {
+        e.preventDefault();
+        
+        let hS = document.getElementById('h-start').value;
+        let mS = document.getElementById('m-start').value;
+        let hE = document.getElementById('h-end').value;
+        let mE = document.getElementById('m-end').value;
+
+        if(!hS || !mS || !hE || !mE) {
+            showNotify("⚠️ HEURES MANQUANTES", "var(--orange)");
+            return;
+        }
+
+        let droneName = document.getElementById('droneSelect').value === 'AUTRE' ? document.getElementById('otherDroneInput').value.trim().toUpperCase() : document.getElementById('droneSelect').value;
+        
+        masquerDrones = masquerDrones.filter(d => d !== droneName);
+        localStorage.setItem(MASQUER_DRONE_KEY, JSON.stringify(masquerDrones));
+        
+        hiddenDevices = hiddenDevices.filter(item => item !== droneName);
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify(hiddenDevices));
+        
+        flights.push({
+            drone: droneName, battery: document.getElementById('batterySelect').value,
+            type: document.getElementById('flightType').value, date: document.getElementById('date').value, 
+            gps: document.getElementById('gps').value,
+            hStart: hS, mStart: mS, hEnd: hE, mEnd: mE
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(flights));
+        updateUI(); showNotify("💾 VOL ENREGISTRÉ ✅");
+        
+        document.getElementById('h-start').selectedIndex = 0; 
+        document.getElementById('m-start').selectedIndex = 0;
+        document.getElementById('h-end').selectedIndex = 0; 
+        document.getElementById('m-end').selectedIndex = 0;
+    };
+
+    function exportJSON() {
+        const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(flights));
+        const a = document.createElement('a'); a.href = data; a.download = "sauvegarde_vols.json"; a.click();
+        showNotify("✅ SAUVEGARDE TERMINÉE", "var(--success)");
+    }
+
+    function importJSON(e) {
+        const reader = new FileReader();
+        reader.onload = (ev) => { 
+            flights = JSON.parse(ev.target.result); 
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(flights)); 
+            updateUI(); 
+            showNotify("✅ RESTAURATION RÉUSSIE", "var(--success)");
+        };
+        reader.readAsText(e.target.files[0]);
+    }
+
+    function initTimeSelectors() {
+        const hs = document.querySelectorAll('#h-start, #h-end');
+        const ms = document.querySelectorAll('#m-start, #m-end');
+        
+        hs.forEach(s => {
+            s.innerHTML = '<option value="">H</option>';
+            for(let i=0; i<24; i++) s.innerHTML += `<option value="${String(i).padStart(2,'0')}">${String(i).padStart(2,'0')} h</option>`;
+        });
+        ms.forEach(s => {
+            s.innerHTML = '<option value="">M</option>';
+            for(let i=0; i<60; i++) s.innerHTML += `<option value="${String(i).padStart(2,'0')}">${String(i).padStart(2,'0')} m</option>`;
+        });
+    }
+
+    window.onload = () => {
+        initTimeSelectors();
+        const selBat = document.getElementById('batterySelect');
+        for(let i=1; i<=20; i++) selBat.innerHTML += `<option value="B${i}">BATTERIE ${i}</option>`;
+        document.getElementById('date').valueAsDate = new Date();
+        initMap(); updateUI();
+        setInterval(() => { document.getElementById('liveClock').innerText = new Date().toLocaleTimeString('fr-FR'); }, 1000);
+        
+        setTimeout(() => {
+            showNotify("💡 Pensez à SAUVEGARDER vos données !", "var(--orange)");
+        }, 2000);
+    };
+</script>
+</body>
+</html>
