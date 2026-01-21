@@ -1,0 +1,16 @@
+{
+  "name": "Carnet de Vol Drone",
+  "short_name": "CarnetVol",
+  "description": "Application de suivi de vols et batteries",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#1a73e8",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3030/3030281.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
